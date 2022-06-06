@@ -12,6 +12,7 @@ import copy
 import json
 import os
 import random
+from collections import namedtuple
 from itertools import groupby
 from typing import (
     Any,
@@ -75,6 +76,7 @@ class Episode:
 
 T = TypeVar("T", bound=Episode)
 
+EpisodeInfo = namedtuple("EpisodeInfo", ["episode_id", "scene_id", "start_position", "start_rotation", "object_category"])
 
 class Dataset(Generic[T]):
     r"""Base class for dataset specification.

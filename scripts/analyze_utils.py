@@ -16,14 +16,14 @@ from sklearn.decomposition import PCA
 from obj_consts import get_variant_labels
 
 def prep_plt(ax=None):
-    SMALL_SIZE = 10
-    MEDIUM_SIZE = 12
-    LARGE_SIZE = 15
+    SMALL_SIZE = 15
+    MEDIUM_SIZE = 18
+    LARGE_SIZE = 24
     plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
     plt.rc('axes', labelsize=LARGE_SIZE)    # fontsize of the x and y labels
     plt.rc('xtick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
     plt.rc('ytick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
-    plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+    plt.rc('legend', fontsize=LARGE_SIZE)    # legend fontsize
     plt.style.use('seaborn-muted')
     plt.figure(figsize=(6,4))
     if ax is None:

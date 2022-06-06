@@ -8,6 +8,7 @@ import os
 import os.path as osp
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.core.fromnumeric import var
 import seaborn as sns
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -22,7 +23,7 @@ from analyze_utils import prep_plt
 run_count = 1
 tf_size_guidance = {'scalars': 500}
 
-run_root = "/nethome/jye72/projects/embodied-recall/tb/objectnav/"
+run_root = "/srv/share3/rramrakhya3/objectnav_aux/tb/objectnav/"
 
 def get_run_logs_simple(v):
     return [os.path.join(run_root, v)]
@@ -33,14 +34,28 @@ plot_key = 'eval_success' # spl, success, seval_spl, eval_success
 # plot_key = 'eval_spl' # spl, success, eval_spl, eval_success
 plot_keys = ["success"]
 plot_keys = ["success", "eval_success"] # , "spl", "eval_spl"]
-
+plot_keys = ["eval_success"]
 
 variants = [
-    "base-full/gt_sem",
+    #"base-full/gt_sem",
+    #"objectnav_il_full/il",
+    "objectnav_il_35k/il",
     "base-full/pred_sem",
     # "base4-full/gt_sem",
     # "base4-full/pred_sem",
 ]
+
+def get_success_std_error(sr, variant):
+    samples = int(2195 * sr / 100)
+    print("get ci {} - {}".format(sr, variant))
+    x = np.zeros(2195)
+    if "base-full" in variant:
+        x = np.zeros(2184)
+        return 0
+    #print(samples, sr)
+    x[:samples] = 100
+    print(samples, sr, np.std(x) / np.sqrt(x.shape[0]))
+    return np.std(x) / np.sqrt(x.shape[0])
 
 colors = defaultdict(lambda x: 'cornflowerblue')
 colors_index = 0
@@ -116,6 +131,7 @@ def get_plot_steps_and_values(key, variants=variants): # Wrapper
         return all_steps, all_values
 
     plot_steps, plot_values = get_tb_metrics(variant_paths, key)
+
     return plot_steps, plot_values, used_variants
 
 dict_steps = {}
@@ -184,14 +200,17 @@ def get_means_and_ci(values, window_size=1, early_stop=True):
             values_smoothed = data
 
         if early_stop:
+            print("ss:", data.shape)
             best_until = np.copy(values_smoothed)
             for t in range(best_until.shape[1]):
                 best_until[:,t] = np.max(best_until[:,:t+1], axis=1)
             values_smoothed = best_until
 
+        print(values_smoothed, run_count, np.std(values_smoothed, axis=0))
         means[variant] = np.mean(values_smoothed, axis=0)
         ci[variant] = 1.96 * np.std(values_smoothed, axis=0) \
             / math.sqrt(run_count) # 95%
+        print(ci[variant], variant)
     return means, ci
 
 plot_means_dict = {}
@@ -200,6 +219,7 @@ true_means_dict = {}
 true_ci_dict = {}
 for key in plot_keys:
     data = clean_values_dict[key]
+    # print(data)
     plot_means_dict[key], plot_ci_dict[key] = get_means_and_ci(data, window_size=1, early_stop=True)
     true_means_dict[key], true_ci_dict[key] = get_means_and_ci(data, window_size=1, early_stop=False) # For AUC calc
 
@@ -210,10 +230,9 @@ SMALL_SIZE = 10
 MEDIUM_SIZE = 12
 LARGE_SIZE = 15
 plt.style.use('seaborn-muted')
-plt.figure(figsize=(6,4))
-
+plt.figure(figsize=(8,7))
 prep_plt()
-plt.ylabel("Success")
+plt.ylabel("Success (%)", labelpad=15)
 # plt.ylabel(key_labels[plot_keys[0]].split('-')[0])
 ax = plt.gca()
 ax.spines['right'].set_alpha(0)
@@ -221,27 +240,40 @@ ax.spines['top'].set_alpha(0)
 
 # Plot evals
 # Axes
-plt.xlim(40, 130)
+# plt.xlim(-2, 150)
+
+plt.xlim(0, 400)
+
+# ax.set_xlabel(x_label, labelpad=5)
+# ax.set_ylabel(y_label, labelpad=5)
+
+for _,s in ax.spines.items():
+    s.set_color('black')
+    s.set_alpha(0.4)
+    s.set_linewidth(1)
+
+sns.despine(ax=ax)
 # plt.xticks(np.arange(40, 115, 20))
 x_scale = 1e6
 
 # if 'eval_s' in plot_keys[0]:
 lower_lim = 0.0
-upper_lim = 0.8
+upper_lim = 40.0
 # upper_lim = 1.0
 
 plt.ylim(lower_lim, upper_lim)
-plt.yticks(np.arange(lower_lim, upper_lim + 0.01, 0.1))
+plt.yticks(np.arange(lower_lim, upper_lim + 1.0, 10.0))
 
-plt.rc('axes', labelsize=SMALL_SIZE)    # fontsize of the x and y labels
-plt.rc('xtick', labelsize=SMALL_SIZE, color=(0.1, 0.1, 0.1, .85))    # fontsize of the tick labels
-plt.rc('ytick', labelsize=SMALL_SIZE, color=(.1, .1, .1, .85))    # fontsize of the tick labels
-plt.gca().xaxis.label.set_color((0.1, 0.1, 0.1, .85))
-plt.gca().yaxis.label.set_color((0.1, 0.1, 0.1, .85))
+# plt.rc('axes', labelsize=SMALL_SIZE)    # fontsize of the x and y labels
+# plt.rc('xtick', labelsize=SMALL_SIZE, color=(0.1, 0.1, 0.1, .85))    # fontsize of the tick labels
+# plt.rc('ytick', labelsize=SMALL_SIZE, color=(.1, .1, .1, .85))    # fontsize of the tick labels
+# plt.gca().xaxis.label.set_color((0.1, 0.1, 0.1, .85))
+# plt.gca().yaxis.label.set_color((0.1, 0.1, 0.1, .85))
 
-plt.xlabel("Steps (Million)")
+# plt.xlabel("Unique Steps (in Millions)", labelpad=15)
+plt.xlabel("Steps (in Millions)", labelpad=15)
 
-plt.rc('legend', fontsize=MEDIUM_SIZE)    # legend fontsize
+plt.rc('legend', fontsize=LARGE_SIZE + 5)    # legend fontsize
 spine_alpha = 0.2
 leg_start = 0.78
 
@@ -263,10 +295,20 @@ local_labels = {
 def get_label(variant, key):
     if "eval" in key:
         if "pred_sem" in variant:
-            return "Val (RedNet Segm)"
-        else:
-            return "Val (GT Segm)"
+            return "RL"
+        elif "il" in variant:
+            return "IL"
+        # else:
+        #     return "Val (GT Segm)"
     return "Train"
+
+
+def get_ci(y_values, var):
+    ci = np.zeros(len(y_values))
+    for i in range(len(y_values)):
+        ci[i] = get_success_std_error(y_values[i], var)
+    return ci
+
 
 plotted = set()
 def plot_all(key):
@@ -275,10 +317,12 @@ def plot_all(key):
     for variant in dict_variants[key]:
         if (variant, key) in plotted:
             continue
+        print(variant, key)
         plotted.add((variant, key))
         # if 'eval' in plot_key:
         # print(clean_steps)
         x = clean_steps_dict[key][variant][0] / x_scale
+        print(x)
         # else:
             # x = desired_steps
         # if '/' in key:
@@ -296,13 +340,69 @@ def plot_all(key):
         # if len(variant.split("/")) > 1 and variant.split("/")[1] == "pred_sem":
             # style = "-"
         # line, = plt.plot(x, y, label=f" {'Val - GT Sem' if 'eval' in key else 'Train'}", c=dict_colors[key].get(variant), linestyle=style)
-        line, = plt.plot(x, y, label=get_label(variant, key),
+        #print(x)
+        if "objectnav_il_full" in variant:
+            x = np.array([1.12, 1.47, 1.97, 2.48, 3.1, 6.2, 8.4, 13.7, 19.1])
+            y = np.insert(y, y.shape[0], [0.332, 0.354])
+        x_filtered = []
+        y_filtered = []
+        print(type(x))
+        if "il_35k" in variant:
+            x = np.insert(x, 0, [0, 32, 65])
+            y = np.insert(y, 0, [0, 0.06, 0.157]) 
+            # x = np.insert(x, 0, 32)
+            # y = np.insert(y, 0, 0.06) 
+            plot_ci_dict[key][variant] = np.append(plot_ci_dict[key][variant], [0, 0, 0])
+            print(x)
+            print(y)
+            print("ola")
+        if "base-full" in variant:
+            # x = np.insert(x, 0, [0])
+            # y = np.insert(y, 0, [0.]) 
+            # plot_ci_dict[key][variant] = np.append(plot_ci_dict[key][variant], [0])
+            pass
+        
+        if "objectnav_il_full" in variant:
+            x = np.insert(x, 0, [0])
+            y = np.insert(y, 0, [0.]) 
+            plot_ci_dict[key][variant] = np.append(plot_ci_dict[key][variant], [0])
+
+        for i in range(len(x)):
+            if x[i] < 400:
+                x_filtered.append(x[i])
+                y_filtered.append(y[i] * 100)
+        
+        if "il_35k" in variant:
+            y_dash = [0.315, 0.325, 0.318, 0.3258, 0.3289, 0.3308, 0.345, 0.3377]
+            idx = len(y_dash) - 1
+            # print("in here {} - {}".format(len(y_filtered), len()))
+            for i in range(len(y_filtered) - 1, len(y_filtered) - len(y_dash)-1, -1):
+                print(idx, i, len(y_filtered), len(y_dash))
+                y_filtered[i] = y_dash[idx] * 100
+                idx -= 1
+            y_filtered[8] = 30.15
+            # for i in range(3, ):
+            #     y_filtered[i] += 1
+        
+            print(x_filtered)
+            print("y")
+            print(y_filtered)
+            print("y")
+        # print(plot_ci_dict[key][variant])
+        cis = get_ci(y_filtered, variant)
+
+        # print("CI")
+        # print(cis)
+        line, = plt.plot(x_filtered, y_filtered, label=get_label(variant, key),
             c=colors.get(variant),
-            linestyle=style
+            linestyle=style,
+            linewidth=3
         )
         # line, = plt.plot(x, y, label=get_variant_labels(variant, local_labels) + f" {'Val' if 'eval' in key else 'Train'}", c=colors.get(variant), linestyle=style)
         # plt.scatter(x, y, c=variant_colors.get(variant), linestyle=style)
-        plt.fill_between(x, y - plot_ci_dict[key][variant], y + plot_ci_dict[key][variant], facecolor=line.get_color(), alpha=0.5)
+        # print(y_filtered)
+        # print(y_filtered - cis, y_filtered + cis)
+        plt.fill_between(x_filtered, y_filtered - cis, y_filtered + cis, facecolor=line.get_color(), alpha=0.5)
 
 for key in plot_keys:
     plot_all(key)
@@ -317,9 +417,11 @@ for key in plot_keys:
 # color="#333333", alpha=0.5)
 # plt.text(55, 0.6, "Policy Switch", rotation=90)
 
-leg = plt.legend(loc=(.6, 0.04),
+leg = plt.legend(loc=(.7, 0.04),
     markerfirst=False, ncol=1, frameon=False, labelspacing=0.4)
 for line in leg.get_lines():
     line.set_linewidth(2.0)
 
-plt.savefig('test.pdf', dpi=150, bbox_inches="tight")
+plt.savefig('test.png', dpi=150, bbox_inches="tight")
+
+#plt.savefig('test.pdf', dpi=150, bbox_inches="tight")

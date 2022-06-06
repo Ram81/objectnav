@@ -195,6 +195,9 @@ class BaseRLTrainer(BaseTrainer):
         batch,
         d_stats,
         rgb_frames=None,
+        stop_episode=[],
+        replay_buffer=[],
+        per_scene_episodes=[],
     ):
         # pausing self.envs with no new episode
         if len(envs_to_pause) > 0:
@@ -219,6 +222,12 @@ class BaseRLTrainer(BaseTrainer):
 
             if rgb_frames is not None:
                 rgb_frames = [rgb_frames[i] for i in state_index]
+            if stop_episode is not None:
+                stop_episode = [stop_episode[i] for i in state_index]
+            if len(replay_buffer) > 0:
+                replay_buffer = [replay_buffer[i] for i in state_index] 
+            if len(per_scene_episodes) > 0:
+                per_scene_episodes = [per_scene_episodes[i] for i in state_index] 
 
         return (
             envs,
@@ -229,4 +238,7 @@ class BaseRLTrainer(BaseTrainer):
             batch,
             d_stats,
             rgb_frames,
+            stop_episode,
+            replay_buffer,
+            per_scene_episodes,
         )

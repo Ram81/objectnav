@@ -12,7 +12,8 @@ RL:
   POLICY:
     FULL_VISION: True # Hack to load the right rednet.
 
-    PRETRAINED_CKPT: "/srv/share/jye72/objectnav/base-full/base-full.35.pth"
+    PRETRAINED_CKPT: "/srv/share3/rramrakhya6/objectnav_aux/objectnav/data/new_checkpoints/objectnav_aux/base-full.31.pth"
+    # PRETRAINED_CKPT: "/srv/share/jye72/objectnav/base-full/base-full.12.pth"
     TRAIN_PRED_SEMANTICS: True
 
     OBS_TRANSFORMS:

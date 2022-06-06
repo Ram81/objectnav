@@ -4,7 +4,9 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from logging import log
 import os
+import sys
 
 import time
 from collections import defaultdict, deque
@@ -13,6 +15,7 @@ import random
 import json
 import attr
 import contextlib
+import copy
 
 import numpy as np
 import tqdm
@@ -26,6 +29,7 @@ from habitat.utils.visualizations.utils import (
     observations_to_image,
     save_semantic_frame
 )
+from habitat.sims.habitat_simulator.actions import HabitatSimActions
 from habitat_baselines.common.base_trainer import BaseRLTrainer
 from habitat_baselines.common.baseline_registry import baseline_registry
 from habitat_baselines.common.env_utils import construct_envs
@@ -56,6 +60,31 @@ from habitat_baselines.rl.ppo import (
 from habitat_baselines.rl.ppo.encoder_dict import (
     get_vision_encoder_inputs
 )
+
+def write_json(data, path):
+    with open(path, 'w') as file:
+        file.write(json.dumps(data))
+
+
+def get_episode_json(episode, reference_replay):
+    episode.reference_replay = reference_replay
+    episode.scene_id = episode.scene_id
+    ep_json = attr.asdict(episode)
+    return ep_json
+
+
+def get_action(action):
+    if action == HabitatSimActions.TURN_RIGHT:
+        return "TURN_RIGHT"
+    elif action == HabitatSimActions.TURN_LEFT:
+        return "TURN_LEFT"
+    elif action == HabitatSimActions.MOVE_FORWARD:
+        return "MOVE_FORWARD"
+    elif action == HabitatSimActions.LOOK_UP:
+        return "LOOK_UP"
+    elif action == HabitatSimActions.LOOK_DOWN:
+        return "LOOK_DOWN"
+    return "STOP"
 
 class Diagnostics:
     basic = "basic" # dummy to record episode stats (for t-test)
@@ -442,7 +471,7 @@ class PPOTrainer(BaseRLTrainer):
         """
         return torch.load(checkpoint_path, *args, **kwargs)
 
-    METRICS_BLACKLIST = {"top_down_map", "collisions.is_collision"}
+    METRICS_BLACKLIST = {"top_down_map", "collisions.is_collision", "exploration_metrics", "room_visitation_map"}
 
     @classmethod
     def _extract_scalars_from_info(
@@ -978,6 +1007,7 @@ class PPOTrainer(BaseRLTrainer):
         # * no bug was found; the issue is likely distribution shift.
 
         # Config
+        logger.info("in soimple eval")
         aux_cfg = config.RL.AUX_TASKS
         ppo_cfg = config.RL.PPO
         task_cfg = config.TASK_CONFIG.TASK
@@ -1275,17 +1305,21 @@ class PPOTrainer(BaseRLTrainer):
 
         config.defrost()
         config.TASK_CONFIG.DATASET.SPLIT = config.EVAL.SPLIT
+        config.VIDEO_OPTION = ["disk"]
+        # config.NUM_PROCESSES = 1
         config.freeze()
 
         if simple_eval:
             self._simple_eval(ckpt_dict, config)
             return
+        
+        logger.info("in non-soimple eval")
 
         # Add additional measurements
         config.defrost()
         config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")
-        if len(self.config.VIDEO_OPTION) > 0:
-            config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
+        #if len(self.config.VIDEO_OPTION) > 0:
+        #    config.TASK_CONFIG.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
         config.freeze()
 
         # Load spaces (via env)
@@ -1392,9 +1426,18 @@ class PPOTrainer(BaseRLTrainer):
             [] for _ in range(self.config.NUM_PROCESSES)
         ]  # type: List[List[np.ndarray]]
 
+        replay_buffer = [
+            [] for _ in range(self.config.NUM_PROCESSES)
+        ]  # type: List[List[np.ndarray]]
+
+        per_scene_episodes = [
+            [] for _ in range(self.config.NUM_PROCESSES)
+        ]  # type: List[List[np.ndarray]]
+
         is_full_eval = len(log_diagnostics) > 0 # len(self.config.VIDEO_OPTION) == 0 and
-        if len(self.config.VIDEO_OPTION) > 0:
-            os.makedirs(self.config.VIDEO_DIR, exist_ok=True)
+        logger.info("{} - {} - {}".format(len(self.config.VIDEO_OPTION), self.config.VIDEO_OPTION, config.VIDEO_OPTION))
+        if len(config.VIDEO_OPTION) > 0:
+            os.makedirs(config.VIDEO_DIR, exist_ok=True)
 
         video_indices = range(self.config.TEST_EPISODE_COUNT)
         print(f"Videos: {video_indices}")
@@ -1415,15 +1458,20 @@ class PPOTrainer(BaseRLTrainer):
                 ] # stored as nested list envs x timesteps x k (# tasks)
 
         pbar = tqdm.tqdm(total=number_of_eval_episodes * num_eval_runs)
+        evaluation_meta = []
 
+        logger.info("\n\n Num envs: {}".format(self.envs.num_envs))
+        stop_episode = [
+            (0, 0) for _ in range(self.config.NUM_PROCESSES)
+        ]
         while (
             len(stats_episodes) < number_of_eval_episodes * num_eval_runs
             and self.envs.num_envs > 0
         ):
-            current_episodes = self.envs.current_episodes()
+            current_episodes = self.envs.current_episodes_info()
             with torch.no_grad(), torch.cuda.amp.autocast() if self._fp16_autocast else contextlib.suppress():
                 weights_output = None
-                if (len(self.config.VIDEO_OPTION) > 0 or Diagnostics.weights in log_diagnostics) and \
+                if (len(config.VIDEO_OPTION) > 0 or Diagnostics.weights in log_diagnostics) and \
                     self.actor_critic.IS_MULTIPLE_BELIEF and self.actor_critic.LATE_FUSION:
                     num_modules = ppo_cfg.POLICY.BELIEFS.NUM_BELIEFS
                     if num_modules == -1:
@@ -1452,6 +1500,9 @@ class PPOTrainer(BaseRLTrainer):
                     behavioral_index=self.behavioral_index,
                     return_all_activations=Diagnostics.internal_activations in log_diagnostics,
                 )
+                # for i in range(len(stop_episode)):
+                #     if stop_episode[i][0]:
+                #         actions[i] = torch.tensor(0)
                 prev_actions.copy_(actions)
 
                 if self.config.EVAL.PROJECT_OUT >= 0:
@@ -1462,6 +1513,13 @@ class PPOTrainer(BaseRLTrainer):
             observations, rewards, dones, infos = [
                 list(x) for x in zip(*outputs)
             ]
+
+            for i in range(len(infos)):
+                goal_vis = int(infos[i]["goal_vis_pixels"] > 0.02) + stop_episode[i][1]
+                is_success = 0
+                if infos[i]["distance_to_goal"] < 0.1:
+                    is_success = 1
+                stop_episode[i] = (is_success, goal_vis)
 
             if len(log_diagnostics) > 0:
                 for i in range(self.envs.num_envs):
@@ -1528,7 +1586,7 @@ class PPOTrainer(BaseRLTrainer):
                 rewards, dtype=torch.float, device=self.device
             ).unsqueeze(1)
             current_episode_reward += rewards
-            next_episodes = self.envs.current_episodes()
+            next_episodes = self.envs.current_episodes_info()
             envs_to_pause = []
             n_envs = self.envs.num_envs
             for i in range(n_envs):
@@ -1563,32 +1621,57 @@ class PPOTrainer(BaseRLTrainer):
                             dones_per_ep[k],
                         )
                     ] = episode_stats
+                    logger.info("Success: {}".format(episode_stats["success"]))
 
-                    if dones_per_ep.get(k, 0) == 1 and len(self.config.VIDEO_OPTION) > 0 and len(stats_episodes) in video_indices:
-                        logger.info(f"Generating video {len(stats_episodes)}")
-                        category = getattr(current_episodes[i], "object_category", "")
-                        if category != "":
-                            category += "_"
-                        try:
-                            if checkpoint_index == -1:
-                                ckpt_file = checkpoint_path.split('/')[-1]
-                                split_info = ckpt_file.split('.')
-                                checkpoint_index = split_info[1]
-                            proj_stem = self.config.EVAL.PROJECTION_PATH.split('/')[-1].split('_')[-2]
-                            proj_str = f"proj-{proj_stem}-{self.config.EVAL.PROJECT_OUT}" if self.config.EVAL.PROJECT_OUT >= 0 else ""
-                            generate_video(
-                                video_option=self.config.VIDEO_OPTION,
-                                video_dir=self.config.VIDEO_DIR,
-                                images=rgb_frames[i],
-                                episode_id=current_episodes[i].episode_id,
-                                checkpoint_idx=checkpoint_index,
-                                metrics=self._extract_scalars_from_info(infos[i]),
-                                tag=f"{proj_str}{category}{label}_{current_episodes[i].scene_id.split('/')[-1]}",
-                                tb_writer=writer,
-                            )
-                        except Exception as e:
-                            logger.warning(str(e))
+                    ep_metrics = copy.deepcopy(episode_stats)
+                    # ep_metrics["room_visitation_map"] = infos[i]["room_visitation_map"]
+                    # ep_metrics["exploration_metrics"] = infos[i]["exploration_metrics"]
+                    ep_metrics["goal_vis_times"] = stop_episode[i][1]
+                    replay_buffer[i].append({
+                        "action": get_action(prev_actions[i].item())
+                    })
+                    episode = get_episode_json(current_episodes[i], replay_buffer[i])
+                    if current_episodes[i].scene_id != next_episodes[i].scene_id:
+                        scene_id = current_episodes[i].scene_id.replace(".glb", "")
+                        output_path = os.path.join(self.config.EVAL.demonstrations_output_path, "{}.json".format(scene_id))
+                        write_json({"episodes": per_scene_episodes[i]}, output_path)
+                        per_scene_episodes[i] = []
+                    per_scene_episodes[i].append(episode)
+                    # evaluation_meta.append({
+                    #     "scene_id": current_episodes[i].scene_id,
+                    #     "episode_id": current_episodes[i].episode_id,
+                    #     "metrics": ep_metrics,
+                    #     "object_category": current_episodes[i].object_category
+                    # })
+                    # write_json(evaluation_meta, config.EVAL.evaluation_meta_file)
+
+                    # if len(config.VIDEO_OPTION) > 0:
+                    #     logger.info(f"Generating video {len(stats_episodes)}")
+                    #     category = getattr(current_episodes[i], "object_category", "")
+                    #     if category != "":
+                    #         category += "_"
+                    #     try:
+                    #         if checkpoint_index == -1:
+                    #             ckpt_file = checkpoint_path.split('/')[-1]
+                    #             split_info = ckpt_file.split('.')
+                    #             checkpoint_index = split_info[1]
+                    #         proj_stem = self.config.EVAL.PROJECTION_PATH.split('/')[-1].split('_')[-2]
+                    #         proj_str = f"proj-{proj_stem}-{self.config.EVAL.PROJECT_OUT}" if self.config.EVAL.PROJECT_OUT >= 0 else ""
+                    #         generate_video(
+                    #             video_option=config.VIDEO_OPTION,
+                    #             video_dir=config.VIDEO_DIR,
+                    #             images=rgb_frames[i],
+                    #             episode_id=current_episodes[i].episode_id,
+                    #             checkpoint_idx=checkpoint_index,
+                    #             metrics=self._extract_scalars_from_info(infos[i]),
+                    #             tag=f"{category}{label}_{current_episodes[i].episode_id}",
+                    #             tb_writer=writer,
+                    #         )
+                    #     except Exception as e:
+                    #         logger.warning(str(e))
                     rgb_frames[i] = []
+                    replay_buffer[i] = []
+                    stop_episode[i] = (0, 0)
 
                     if len(log_diagnostics) > 0:
                         diagnostic_info = dict()
@@ -1627,7 +1710,10 @@ class PPOTrainer(BaseRLTrainer):
 
                 # episode continues
                 else:
-                    if len(self.config.VIDEO_OPTION) > 0:
+                    replay_buffer[i].append({
+                        "action": get_action(prev_actions[i].item())
+                    })
+                    if len(config.VIDEO_OPTION) > 0:
                         aux_weights = None if weights_output is None else weights_output[i]
                         frame = observations_to_image(observations[i], infos[i], current_episode_reward[i].item(), aux_weights, aux_task_strings)
                         rgb_frames[i].append(frame)
@@ -1645,6 +1731,9 @@ class PPOTrainer(BaseRLTrainer):
                 batch,
                 d_stats,
                 rgb_frames,
+                stop_episode,
+                replay_buffer,
+                per_scene_episodes,
             ) = self._pause_envs(
                 envs_to_pause,
                 self.envs,
@@ -1655,7 +1744,15 @@ class PPOTrainer(BaseRLTrainer):
                 batch,
                 d_stats,
                 rgb_frames,
+                stop_episode,
+                replay_buffer,
+                per_scene_episodes
             )
+        
+        for i in range(self.config.NUM_PROCESSES):
+            scene_id = current_episodes[i].scene_id.replace(".glb", "")
+            output_path = os.path.join(self.config.EVAL.demonstrations_output_path, "{}.json".format(scene_id))
+            write_json({"episodes": per_scene_episodes[i]}, output_path)
 
         # Report results
         num_episodes = len(stats_episodes)
@@ -1665,6 +1762,8 @@ class PPOTrainer(BaseRLTrainer):
                 sum([v[stat_key] for v in stats_episodes.values()])
                 / num_episodes
             )
+        
+        write_json(evaluation_meta, config.EVAL.evaluation_meta_file)
 
         for k, v in aggregated_stats.items():
             logger.info(f"Average episode {k}: {v:.4f}")
@@ -1672,17 +1771,17 @@ class PPOTrainer(BaseRLTrainer):
         if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:
             step_id = ckpt_dict["extra_state"]["step"]
             logger.info(f"\n Step ID (update): {step_id}")
-        if label != "train" and num_episodes == 2184 and not skip_log:
-            writer.add_scalars(
-                "eval_reward",
-                {"average reward": aggregated_stats["reward"]},
-                step_id,
-            )
-            metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
-            if len(metrics) > 0:
-                writer.add_scalars("eval_metrics", metrics, step_id)
-                logger.info("eval_metrics")
-                logger.info(metrics)
+        #if label != "train" and num_episodes == 2184 and not skip_log:
+        writer.add_scalars(
+            "eval_reward",
+            {"average reward": aggregated_stats["reward"]},
+            step_id,
+        )
+        metrics = {k: v for k, v in aggregated_stats.items() if k != "reward"}
+        if len(metrics) > 0:
+            writer.add_scalars("eval_metrics", metrics, step_id)
+            logger.info("eval_metrics")
+            logger.info(metrics)
         if len(log_diagnostics) > 0:
             proj_str = f"proj-{self.config.EVAL.PROJECT_OUT}" if self.config.EVAL.PROJECT_OUT >= 0 else ""
             os.makedirs(output_dir, exist_ok=True)

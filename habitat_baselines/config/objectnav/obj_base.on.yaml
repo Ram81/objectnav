@@ -1,18 +1,24 @@
-CHECKPOINT_FOLDER: "/srv/share/jye72/objectnav/"
-LOG_FILE: "runs/objectnav/"
-TENSORBOARD_DIR: "tb/objectnav/"
-VIDEO_DIR: "/srv/share/jye72/vis/videos/objectnav/"
+CHECKPOINT_FOLDER: "/srv/share3/rramrakhya6/objectnav_aux/objectnav/data/new_checkpoints"
+LOG_FILE: "/srv/share3/rramrakhya6/objectnav_aux/objectnav/runs/objectnav/"
+TENSORBOARD_DIR: "/srv/share3/rramrakhya6/objectnav_aux/objectnav/tb/objectnav/aux_2/"
+VIDEO_DIR: "/srv/share3/rramrakhya6/objectnav_aux/objectnav/vis/videos/objectnav/ckpt_12_v2/"
 
 BASE_TASK_CONFIG_PATH: "configs/tasks/objectnav_mp3d.yaml"
 SIMULATOR_GPU_ID: 0
 TORCH_GPU_ID: 0
 VIDEO_OPTION: []
-NUM_PROCESSES: 4
-SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+NUM_PROCESSES: 1
+SENSORS: ["RGB_SENSOR", 'SEMANTIC_SENSOR', "DEPTH_SENSOR"]
 NUM_UPDATES: 100000
 LOG_INTERVAL: 50
+NUM_PROCESSES: 1
 CHECKPOINT_INTERVAL: 1000
-TEST_EPISODE_COUNT: 2184 # 312 # 2184 ~ 2 mins per episode - 500 steps, 250 / min, 4 fps???
+TEST_EPISODE_COUNT: 10 # 2184 # 312 # 2184 ~ 2 mins per episode - 500 steps, 250 / min, 4 fps???
+EVAL:
+  SPLIT: val
+  USE_CKPT_CONFIG: False
+  evaluation_meta_file: "/srv/share3/rramrakhya6/objectnav_aux/objectnav/tb/objectnav/evaluation_meta_full_ckpt12.json"
+  demonstrations_output_path: "/srv/flash1/rramrakhya6/spring_2022/habitat-imitation-baselines/data/datasets/objectnav_mp3d/objectnav_mp3d_count_explore/train/content/"
 
 RL:
   SUCCESS_REWARD: 2.5

@@ -214,7 +214,7 @@ _C.RL.PPO.POLICY.BELIEFS.POLICY_INDEX = 0 # Used for comms policy
 
 _C.RL.PPO.POLICY.USE_SEMANTICS = False # Feed semantic to policy.
 _C.RL.PPO.POLICY.EVAL_GT_SEMANTICS = False # Experimental - we'll keep semantics on at test as well, just to see. Otherwise, default to rednet ckpt (specified below)
-_C.RL.PPO.POLICY.EVAL_SEMANTICS_CKPT = "/srv/share/jye72/rednet/rednet_semmap_mp3d_tuned.pth"
+_C.RL.PPO.POLICY.EVAL_SEMANTICS_CKPT = "/srv/share3/rramrakhya6/objectnav_aux/objectnav/data/new_checkpoints/objectnav_aux/rednet_semmap_mp3d_tuned.pth"
 _C.RL.PPO.POLICY.EVAL_SEMANTICS_STABILIZE = False # Squash and upsample
 _C.RL.PPO.POLICY.EVAL_SEMANTICS_MUTE = False # Set to void
 

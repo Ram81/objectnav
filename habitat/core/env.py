@@ -14,7 +14,7 @@ import numpy as np
 from gym.spaces.dict_space import Dict as SpaceDict
 
 from habitat.config import Config
-from habitat.core.dataset import Dataset, Episode, EpisodeIterator
+from habitat.core.dataset import Dataset, Episode, EpisodeInfo, EpisodeIterator
 from habitat.core.embodied_task import EmbodiedTask, Metrics
 from habitat.core.simulator import Observations, Simulator
 from habitat.datasets import make_dataset
@@ -175,6 +175,16 @@ class Env:
             self._episode_start_time
         ), "Elapsed seconds requested before episode was started."
         return time.time() - self._episode_start_time
+    
+    def current_episode_info(self) -> EpisodeInfo:
+        assert self._current_episode is not None
+        return EpisodeInfo(
+            episode_id=self._current_episode.episode_id,
+            scene_id=self._current_episode.scene_id,
+            start_position=self._current_episode.start_position,
+            start_rotation=self._current_episode.start_rotation,
+            object_category=self._current_episode.object_category
+        )
 
     def get_metrics(self) -> Metrics:
         return self._task.measurements.get_metrics()
@@ -373,6 +383,15 @@ class RLEnv(gym.Env):
     @episodes.setter
     def episodes(self, episodes: List[Type[Episode]]) -> None:
         self._env.episodes = episodes
+    
+    def current_episode_info(self) -> EpisodeInfo:
+        return EpisodeInfo(
+            episode_id=self._current_episode.episode_id,
+            scene_id=self._current_episode.scene_id,
+            start_position=self._current_episode.start_position,
+            start_rotation=self._current_episode.start_rotation,
+            object_category=self._current_episode.object_category
+        )
 
     def reset(self) -> Observations:
         return self._env.reset()

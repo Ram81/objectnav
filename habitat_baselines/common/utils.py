@@ -298,16 +298,18 @@ def generate_video(
     Returns:
         None
     """
+    logger.info("gen videos {} - {}".format(video_option, len(images)))
     if len(images) < 1:
         return
 
     metric_strs = []
     for k, v in metrics.items():
-        if k not in ['coverage.visit_count', 'softspl', 'collisions.count'] and 'reward' not in k:
+        if k not in ['coverage.visit_count', 'softspl', 'collisions.count', 'room_visitation_map'] and 'reward' not in k:
             metric_strs.append(f"{k}={v:.2f}")
 
     video_name = f"{tag}-episode={episode_id}-ckpt={checkpoint_idx}-" + "-".join(metric_strs)
     if "disk" in video_option:
+        logger.info("gen videos disk")
         assert video_dir is not None
         images_to_video(images, video_dir, video_name)
     if "tensorboard" in video_option:

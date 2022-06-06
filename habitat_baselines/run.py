@@ -52,7 +52,7 @@ def get_parser():
         "--base-config",
         "-b",
         type=str,
-        default="/srv/flash1/jye72/projects/embodied-recall/habitat_baselines/config/objectnav/obj_base.on.yaml",
+        default="/srv/share3/rramrakhya6/objectnav_aux/objectnav/habitat_baselines/config/objectnav/obj_base.on.yaml",
         help="path to universal config (for most of your experiments)"
     )
 
@@ -128,7 +128,7 @@ def get_parser():
 
 def main():
     # Change dir so that no matter where we invoke this script (i.e. manually via CLI or from another script like `eval_cron`), imports are correct
-    os.chdir('/srv/flash1/jye72/projects/embodied-recall')
+    os.chdir('/srv/share3/rramrakhya6/objectnav_aux/objectnav')
     parser = get_parser()
     args = parser.parse_args()
     run_exp(**vars(args))
@@ -178,7 +178,9 @@ def run_exp(
     if run_suffix is not None:
         exp_dir, exp_yaml = os.path.split(exp_config)
         exp_config = os.path.join(exp_dir, run_suffix, exp_yaml)
+    print(exp_config, base_config)
     config = get_config([base_config, exp_config], opts)
+    print(config)
 
     variant_name = os.path.split(exp_config)[1].split('.')[0]
     config.defrost()
@@ -230,7 +232,7 @@ def run_exp(
         map_cfg.MAP_RESOLUTION = 1200
         log_diagnostics = []
 
-        eval_stats_dir = osp.join(f'/srv/share/jye72/objectnav_eval/', variant_name)
+        eval_stats_dir = osp.join(f'/srv/share3/rramrakhya6/objectnav_aux/objectnav/objectnav_eval/', variant_name)
         if eval_viz:
             config.TEST_EPISODE_COUNT = 30
             config.VIDEO_OPTION = ["disk"]
@@ -239,7 +241,7 @@ def run_exp(
             log_diagnostics = [Diagnostics.basic, Diagnostics.episode_info]
         if record_all:
             # will carry over video option from eval_viz
-            eval_stats_dir = osp.join(f'/srv/share/jye72/objectnav_detailed/', variant_name)
+            eval_stats_dir = osp.join(f'/srv/share3/rramrakhya6/objectnav_aux/objectnav/objectnav_detailed/', variant_name)
             config.TEST_EPISODE_COUNT = 300
             # config.TEST_EPISODE_COUNT = 22
 
@@ -248,7 +250,7 @@ def run_exp(
             else:
                 config.EVAL.SPLIT = f"val_{config.TEST_EPISODE_COUNT}"
 
-            config.VIDEO_DIR = osp.join("/srv/share/jye72/vis/videos/objectnav_detailed/", variant_name)
+            config.VIDEO_DIR = osp.join("/srv/share3/rramrakhya6/objectnav_aux/objectnav/vis/videos/objectnav_detailed/", variant_name)
 
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("GOAL_OBJECT_VISIBLE_PIXELS")
             config.TASK_CONFIG.TASK.MEASUREMENTS.append("REGION_LEVEL_INFO")
@@ -285,13 +287,13 @@ def run_exp(
             config.VIDEO_DIR = osp.join(config.VIDEO_DIR, "pred_sem")
             print("Running evaluation with semantic predictions")
 
-    if ckpt_path is not None:
-        ckpt_dir, ckpt_file = os.path.split(ckpt_path)
-        _, *ckpt_file_others = ckpt_file.split(".")
-        ckpt_num = ckpt_file_others[-2]
-        eval_stats_dir = osp.join(eval_stats_dir, ckpt_num)
-        ckpt_file = ".".join([variant_name, *ckpt_file_others])
-        ckpt_path = os.path.join(config.CHECKPOINT_FOLDER, ckpt_file)
+    # if ckpt_path is not None:
+    #     ckpt_dir, ckpt_file = os.path.split(ckpt_path)
+    #     _, *ckpt_file_others = ckpt_file.split(".")
+    #     ckpt_num = ckpt_file_others[-2]
+    #     eval_stats_dir = osp.join(eval_stats_dir, ckpt_num)
+    #     ckpt_file = ".".join([variant_name, *ckpt_file_others])
+    #     ckpt_path = os.path.join(config.CHECKPOINT_FOLDER, ckpt_file)
 
     if run_id is None:
         random.seed(config.TASK_CONFIG.SEED)
@@ -401,7 +403,7 @@ def run_exp(
         ckpt_dir, ckpt_file = os.path.split(ckpt_path)
         ckpt_index = ckpt_file.split('.')[1]
         true_path = os.path.join(ckpt_dir, run_prefix, f"{run_prefix}.{ckpt_index}.pth")
-        trainer.eval(true_path, log_diagnostics=log_diagnostics, output_dir=eval_stats_dir, label=diagnostic_label)
+        trainer.eval(ckpt_path, log_diagnostics=log_diagnostics, output_dir=eval_stats_dir, label=diagnostic_label)
 
 if __name__ == "__main__":
     main()
